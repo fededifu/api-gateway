@@ -1,0 +1,72 @@
+services:
+  identity:
+    build: .
+    command: ["/bin/mockidentity"]
+    environment:
+      IDENTITY_ADDR: ":8081"
+    ports:
+      - "8081:8081"
+    healthcheck:
+      test: ["CMD", "/bin/mockbackend"]  # no curl in distroless; overridden below
+      disable: true
+
+  vectordb:
+    build: .
+    command: ["/bin/mockbackend"]
+    environment:
+      ADDR: ":8082"
+      BACKEND_NAME: "vectordb"
+      LATENCY_BASE: "30"
+      LATENCY_JITTER: "40"
+    ports:
+      - "8082:8082"
+
+  fileservice:
+    build: .
+    command: ["/bin/mockbackend"]
+    environment:
+      ADDR: ":8083"
+      BACKEND_NAME: "fileservice"
+      LATENCY_BASE: "15"
+      LATENCY_JITTER: "20"
+    ports:
+      - "8083:8083"
+
+  gateway:
+    build: .
+    command: ["/bin/gateway"]
+    environment:
+      GATEWAY_ADDR: ":8080"
+      IDENTITY_URL: "http://identity:8081"
+      JWKS_ENDPOINT: "http://identity:8081/.well-known/jwks.json"
+      VECTORDB_URL: "http://vectordb:8082"
+      FILESERVICE_URL: "http://fileservice:8083"
+      RATE_LIMIT_RATE: "2000"
+      RATE_LIMIT_BURST: "200"
+      LOG_LEVEL: "info"
+    ports:
+      - "8080:8080"
+    depends_on:
+      - identity
+      - vectordb
+      - fileservice
+
+  prometheus:
+    image: prom/prometheus:latest
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "9090:9090"
+
+  grafana:
+    image: grafana/grafana:latest
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: "Admin"
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
